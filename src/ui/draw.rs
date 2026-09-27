@@ -316,7 +316,7 @@ fn draw_legend(frame: &mut Frame, app: &App, area: Rect) {
     };
     c.style(area, Style::default().bg(theme.header_bg));
 
-    let root = app.root();
+    let root = app.tree_root();
     let node = app.tree.node(root);
     let mut x = area.x + 1;
     let totals = format!(
@@ -432,7 +432,10 @@ fn ramp_swatch(
         ColorModeName::Category => return,
     };
     let bar_w = (max_w - 16).clamp(8, 36);
-    let mut x = c.text(x, y, lo, Style::default().fg(theme.dim), 8);
+    let palette_name = app.palette.name();
+    let mut x = c.text(x, y, palette_name, Style::default().fg(theme.dim), 10);
+    x = c.text(x, y, "  ", Style::default(), 2);
+    x = c.text(x, y, lo, Style::default().fg(theme.dim), 8);
     x = c.text(x, y, " ", Style::default(), 1);
     for i in 0..bar_w {
         let t = i as f64 / (bar_w - 1).max(1) as f64;
@@ -483,7 +486,7 @@ fn draw_treemap(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let total = app.tree.node(app.root()).size.max(1);
+    let total = app.tree.node(app.view_root()).size.max(1);
     let category_mode = app.plan.mode == ColorModeName::Category;
     for item in &app.layout {
         let rect = item.rect;
@@ -722,7 +725,7 @@ fn draw_sidebar(frame: &mut Frame, app: &App, area: Rect) {
     if y >= area.bottom() {
         return;
     }
-    let total = app.tree.node(app.root()).size.max(1);
+    let total = app.tree.node(app.view_root()).size.max(1);
     let pct = node.size as f64 / total as f64 * 100.0;
     let size_text = format_size(node.size);
     c.text(
@@ -1042,7 +1045,7 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
         area,
     };
     c.style(area, Style::default().bg(theme.header_bg));
-    let keys = " space mark · enter open · hjkl move · / filter · [ ] depth · t size · m colors · r rescan · ? help · q quit";
+    let keys = " space mark · enter open · hjkl move · / filter · [ ] depth · t size · m colors · p palette · r rescan · ? help · q quit";
     let keys_max = (area.width as usize).saturating_sub(right_w + 2);
     c.text(
         area.x,
@@ -1095,6 +1098,7 @@ fn draw_help(frame: &mut Frame, app: &App, area: Rect) {
         ("[ ]", "decrease / increase depth"),
         ("t", "cycle size / files / age"),
         ("m", "cycle colors: category / size / age / depth"),
+        ("p", "cycle palette (viridis, cividis, slate, ...)"),
         ("H", "toggle hidden entries (rescans)"),
         ("a", "toggle apparent size (rescans)"),
         ("/", "filter by name (esc clears)"),

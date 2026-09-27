@@ -34,6 +34,7 @@ pub struct OutputOptions {
     pub palette: Palette,
     pub color_mode: ColorModeName,
     pub scale: ScaleName,
+    pub saturation: f64,
     pub width: u16,
     pub height: u16,
 }
@@ -54,6 +55,7 @@ impl Default for OutputOptions {
             palette: Palette::Viridis,
             color_mode: ColorModeName::Category,
             scale: ScaleName::Log,
+            saturation: 0.7,
             width: 100,
             height: 30,
         }
@@ -155,6 +157,7 @@ fn color_plan(opts: &OutputOptions) -> color::ColorPlan {
         scale: opts.scale,
         reverse: opts.reverse,
         light: false,
+        saturation: opts.saturation,
     }
 }
 
@@ -403,6 +406,7 @@ fn write_ansi(tree: &Tree, out: &mut dyn Write, opts: &OutputOptions) -> io::Res
         scale: opts.scale,
         reverse: opts.reverse,
         light: false,
+        saturation: opts.saturation,
     };
     for (rank, p) in placed.iter().enumerate() {
         let id = ids[p.index];

@@ -283,6 +283,7 @@ fn output_options(
         palette,
         color_mode,
         scale: config.color.scale,
+        saturation: config.color.saturation,
         width: width.unwrap_or(100),
         height: height.unwrap_or(30),
     })

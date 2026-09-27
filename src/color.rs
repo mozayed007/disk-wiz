@@ -15,10 +15,11 @@ pub type Rgb = (u8, u8, u8);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Palette {
     Viridis,
+    Cividis,
+    Slate,
     Magma,
     Inferno,
     Plasma,
-    Cividis,
     Turbo,
     Spectral,
     OkabeIto,
@@ -27,12 +28,13 @@ pub enum Palette {
 }
 
 impl Palette {
-    pub const SEQUENTIAL: [Palette; 7] = [
+    pub const SEQUENTIAL: [Palette; 8] = [
         Palette::Viridis,
+        Palette::Cividis,
+        Palette::Slate,
         Palette::Magma,
         Palette::Inferno,
         Palette::Plasma,
-        Palette::Cividis,
         Palette::Turbo,
         Palette::Spectral,
     ];
@@ -42,10 +44,11 @@ impl Palette {
         let n = name.trim().to_ascii_lowercase().replace(['-', '_'], "");
         Some(match n.as_str() {
             "viridis" => Palette::Viridis,
+            "cividis" => Palette::Cividis,
+            "slate" | "neutral" => Palette::Slate,
             "magma" => Palette::Magma,
             "inferno" => Palette::Inferno,
             "plasma" => Palette::Plasma,
-            "cividis" => Palette::Cividis,
             "turbo" => Palette::Turbo,
             "spectral" => Palette::Spectral,
             "okabeito" | "okabe" => Palette::OkabeIto,
@@ -58,10 +61,11 @@ impl Palette {
     pub fn name(&self) -> &'static str {
         match self {
             Palette::Viridis => "viridis",
+            Palette::Cividis => "cividis",
+            Palette::Slate => "slate",
             Palette::Magma => "magma",
             Palette::Inferno => "inferno",
             Palette::Plasma => "plasma",
-            Palette::Cividis => "cividis",
             Palette::Turbo => "turbo",
             Palette::Spectral => "spectral",
             Palette::OkabeIto => "okabe-ito",
@@ -80,6 +84,17 @@ impl Palette {
             .chain(Self::CATEGORICAL.iter())
             .map(|p| p.name())
             .collect()
+    }
+
+    /// The next palette in the cycle (used by the TUI `p` key).
+    pub fn next(&self) -> Palette {
+        let all: Vec<Palette> = Self::SEQUENTIAL
+            .iter()
+            .chain(Self::CATEGORICAL.iter())
+            .copied()
+            .collect();
+        let idx = all.iter().position(|p| p == self).unwrap_or(0);
+        all[(idx + 1) % all.len()]
     }
 
     fn gradient(&self) -> Option<colorous::Gradient> {
@@ -102,13 +117,27 @@ pub fn sequential(palette: Palette, t: f64) -> Rgb {
         let c = g.eval_continuous(t);
         return (c.r, c.g, c.b);
     }
-    if palette == Palette::Spectral {
-        return spectral(t);
+    match palette {
+        Palette::Spectral => spectral(t),
+        Palette::Slate => slate(t),
+        _ => {
+            // Categorical palettes used sequentially: pick by index.
+            let n = categorical_len(palette).max(1);
+            let idx = ((t * (n as f64 - 1.0)).round() as usize).min(n - 1);
+            categorical(palette, idx)
+        }
     }
-    // Categorical palettes used sequentially: pick by index.
-    let n = categorical_len(palette).max(1);
-    let idx = ((t * (n as f64 - 1.0)).round() as usize).min(n - 1);
-    categorical(palette, idx)
+}
+
+/// Pull a color toward its own gray: `1.0` keeps it, lower values mute it.
+pub fn with_saturation(c: Rgb, saturation: f64) -> Rgb {
+    let s = saturation.clamp(0.0, 1.0);
+    if s >= 1.0 {
+        return c;
+    }
+    let gray = 0.2126 * c.0 as f64 + 0.7152 * c.1 as f64 + 0.0722 * c.2 as f64;
+    let f = |x: u8| (gray + (x as f64 - gray) * s).round().clamp(0.0, 255.0) as u8;
+    (f(c.0), f(c.1), f(c.2))
 }
 
 /// Pick color `i` from a categorical palette (wrapping).
@@ -187,11 +216,29 @@ fn spectral(t: f64) -> Rgb {
         (50, 136, 189),
         (94, 79, 162),
     ];
-    let t = t.clamp(0.0, 1.0) * (STOPS.len() - 1) as f64;
-    let i = (t.floor() as usize).min(STOPS.len() - 2);
+    ramp(&STOPS, t)
+}
+
+/// Neutral slate ramp: lightness carries the value, with a cool tint.
+fn slate(t: f64) -> Rgb {
+    const STOPS: [Rgb; 7] = [
+        (28, 34, 46),
+        (48, 57, 74),
+        (74, 87, 110),
+        (106, 122, 148),
+        (144, 160, 186),
+        (186, 198, 218),
+        (228, 234, 244),
+    ];
+    ramp(&STOPS, t)
+}
+
+fn ramp(stops: &[Rgb], t: f64) -> Rgb {
+    let t = t.clamp(0.0, 1.0) * (stops.len() - 1) as f64;
+    let i = (t.floor() as usize).min(stops.len() - 2);
     let f = t - i as f64;
-    let a = STOPS[i];
-    let b = STOPS[i + 1];
+    let a = stops[i];
+    let b = stops[i + 1];
     let lerp = |x: u8, y: u8| (x as f64 + (y as f64 - x as f64) * f).round() as u8;
     (lerp(a.0, b.0), lerp(a.1, b.1), lerp(a.2, b.2))
 }
@@ -259,6 +306,8 @@ pub struct ColorPlan {
     pub scale: ScaleName,
     pub reverse: bool,
     pub light: bool,
+    /// 1.0 keeps the palette color, lower values mute it toward gray.
+    pub saturation: f64,
 }
 
 impl Default for ColorPlan {
@@ -269,6 +318,7 @@ impl Default for ColorPlan {
             scale: ScaleName::Log,
             reverse: false,
             light: false,
+            saturation: 0.7,
         }
     }
 }
@@ -308,7 +358,7 @@ impl ColorPlan {
         if self.reverse ^ self.light {
             t = 1.0 - t;
         }
-        sequential(self.palette, t)
+        with_saturation(sequential(self.palette, t), self.saturation)
     }
 }
 

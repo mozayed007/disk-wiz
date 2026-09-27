@@ -327,14 +327,14 @@ mod tests {
         app.filter = "src".to_string();
         let src = app
             .tree
-            .sorted_children(app.root(), crate::tree::SortKey::Size, false)
+            .sorted_children(app.view_root(), crate::tree::SortKey::Size, false)
             .into_iter()
             .find(|&id| app.tree.name(id) == "src")
             .unwrap();
         assert!(app.matches_filter(src));
         let target = app
             .tree
-            .sorted_children(app.root(), crate::tree::SortKey::Size, false)
+            .sorted_children(app.view_root(), crate::tree::SortKey::Size, false)
             .into_iter()
             .find(|&id| app.tree.name(id) == "target")
             .unwrap();
@@ -381,6 +381,7 @@ mod tests {
                     scale: ScaleName::Log,
                     reverse: true,
                     light: false,
+                    saturation: 0.7,
                 };
                 app.invalidate_layout();
                 let out = render(&mut app, 100, 30);
@@ -415,6 +416,122 @@ mod tests {
         assert!(out.contains("nothing to show") || out.contains("scanning"));
     }
 
+    /// Drive the real key path and print the resulting state, to check that
+    /// shortcuts actually do what the footer promises.
+    #[test]
+    #[ignore = "diagnostic: DW_PREVIEW_PATH=F:\\projects cargo test simulate_keys -- --ignored --nocapture"]
+    fn simulate_keys() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let path = std::env::var("DW_PREVIEW_PATH").unwrap_or_else(|_| ".".to_string());
+        let palette = std::env::var("DW_PREVIEW_PALETTE")
+            .ok()
+            .and_then(|name| crate::color::Palette::from_name(&name))
+            .unwrap_or(crate::color::Palette::Viridis);
+        let saturation: f64 = std::env::var("DW_PREVIEW_SAT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0.7);
+        let color_mode = match std::env::var("DW_PREVIEW_MODE").as_deref() {
+            Ok("category") => crate::config::ColorModeName::Category,
+            Ok("age") => crate::config::ColorModeName::Age,
+            Ok("depth") => crate::config::ColorModeName::Depth,
+            _ => crate::config::ColorModeName::Size,
+        };
+        let mut config = Config::default();
+        config.color.palette = palette.name().to_string();
+        config.color.saturation = saturation;
+        config.color.mode = color_mode;
+        let spec = ScanSpec {
+            paths: vec![std::path::PathBuf::from(&path)],
+            ..Default::default()
+        };
+        let cfg = UiConfig {
+            spec: spec.clone(),
+            config,
+            categories: CategoryMap::builtin(),
+            size_mode: SizeModeName::Size,
+            sidebar: SidebarMode::Always,
+            theme: ThemeName::Auto,
+            keymap: crate::ui::keys::KeyMap::default_map(),
+        };
+        let outcome = crate::scan::scan_all(
+            &spec,
+            std::sync::Arc::new(crate::scan::ScanProgress::default()),
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .unwrap();
+        let tree = Tree::from_scan(
+            outcome.root,
+            &cfg.categories,
+            outcome.errors,
+            outcome.error_count,
+            outcome.duration,
+        );
+        let mut app = App::new(tree, cfg);
+        app.ensure_layout(ratatui::layout::Rect::new(0, 0, 110, 38));
+
+        let show = |app: &App, label: &str| {
+            let sel = app.selection;
+            println!(
+                "{label:<12} sel={:<28} root={:<16} depth={} mode={:?} colors={:?} filter={:?} marked={} quit={}",
+                app.tree.path_of(sel).to_string_lossy(),
+                app.tree.name(app.view_root()),
+                app.depth,
+                app.size_mode,
+                app.plan.mode,
+                app.filter,
+                app.marked.len(),
+                app.should_quit,
+            );
+        };
+        let press = |app: &mut App, code: KeyCode| {
+            app.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
+        };
+
+        show(&app, "start");
+        for key in [
+            KeyCode::Char('l'),
+            KeyCode::Char('l'),
+            KeyCode::Char('j'),
+            KeyCode::Char('j'),
+            KeyCode::Char('h'),
+            KeyCode::Char('k'),
+        ] {
+            press(&mut app, key);
+            show(&app, &format!("{key:?}"));
+        }
+        press(&mut app, KeyCode::Enter);
+        show(&app, "enter");
+        press(&mut app, KeyCode::Backspace);
+        show(&app, "backspace");
+        press(&mut app, KeyCode::Char('t'));
+        show(&app, "t");
+        press(&mut app, KeyCode::Char('m'));
+        show(&app, "m");
+        press(&mut app, KeyCode::Char(']'));
+        show(&app, "]");
+        press(&mut app, KeyCode::Char('['));
+        show(&app, "[");
+        press(&mut app, KeyCode::Char(' '));
+        show(&app, "space");
+        press(&mut app, KeyCode::Char('d'));
+        show(&app, "d");
+        assert!(app.confirm.is_some(), "d should open the confirm dialog");
+        press(&mut app, KeyCode::Esc);
+        show(&app, "esc");
+        press(&mut app, KeyCode::Char('/'));
+        for ch in "fastf1".chars() {
+            press(&mut app, KeyCode::Char(ch));
+        }
+        press(&mut app, KeyCode::Enter);
+        show(&app, "filter");
+        press(&mut app, KeyCode::Char('0'));
+        show(&app, "0");
+        press(&mut app, KeyCode::Char('q'));
+        show(&app, "q");
+        assert!(app.should_quit, "q should quit");
+    }
+
     #[test]
     #[ignore = "manual visual check: cargo test dump_frame -- --ignored --nocapture"]
     fn dump_frame() {
@@ -435,6 +552,10 @@ mod tests {
 
     /// Render the TUI frame to an HTML file so the colors can be inspected
     /// outside a terminal: `DW_PREVIEW_PATH=F:\projects cargo test preview_html -- --ignored`.
+    ///
+    /// Variants for comparing looks:
+    /// `DW_PREVIEW_PALETTE=cividis DW_PREVIEW_SAT=0.6 DW_PREVIEW_MODE=size
+    ///  DW_PREVIEW_OUT=target/preview-cividis.html cargo test preview_html -- --ignored`
     #[test]
     #[ignore = "writes target/tui-preview.html"]
     fn preview_html() {
@@ -457,13 +578,33 @@ mod tests {
                 .replace('>', "&gt;")
         }
         let path = std::env::var("DW_PREVIEW_PATH").unwrap_or_else(|_| ".".to_string());
+        let palette = std::env::var("DW_PREVIEW_PALETTE")
+            .ok()
+            .and_then(|name| crate::color::Palette::from_name(&name))
+            .unwrap_or(crate::color::Palette::Viridis);
+        let saturation: f64 = std::env::var("DW_PREVIEW_SAT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0.7);
+        let color_mode = match std::env::var("DW_PREVIEW_MODE").as_deref() {
+            Ok("category") => crate::config::ColorModeName::Category,
+            Ok("age") => crate::config::ColorModeName::Age,
+            Ok("depth") => crate::config::ColorModeName::Depth,
+            _ => crate::config::ColorModeName::Size,
+        };
+        let mut config = Config::default();
+        let out_path = std::env::var("DW_PREVIEW_OUT")
+            .unwrap_or_else(|_| "target/tui-preview.html".to_string());
+        config.color.palette = palette.name().to_string();
+        config.color.saturation = saturation;
+        config.color.mode = color_mode;
         let spec = ScanSpec {
             paths: vec![std::path::PathBuf::from(&path)],
             ..Default::default()
         };
         let cfg = UiConfig {
             spec: spec.clone(),
-            config: Config::default(),
+            config,
             categories: CategoryMap::builtin(),
             size_mode: SizeModeName::Size,
             sidebar: SidebarMode::Always,
@@ -540,6 +681,6 @@ mod tests {
             html.push('\n');
         }
         html.push_str("</pre></body></html>");
-        std::fs::write("target/tui-preview.html", html).unwrap();
+        std::fs::write(&out_path, html).unwrap();
     }
 }

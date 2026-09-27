@@ -157,6 +157,7 @@ impl App {
             scale: cfg.config.color.scale,
             reverse: cfg.config.color.reverse,
             light: theme.is_light(),
+            saturation: cfg.config.color.saturation,
         };
         let depth = cfg.config.tui.depth.clamp(1, 12);
         let size_mode = match cfg.size_mode {
@@ -410,18 +411,52 @@ impl App {
 
     // -- navigation ---------------------------------------------------------
 
+    /// Move the selection to the nearest cell in a direction.
+    ///
+    /// Movement is level-by-level: first among siblings, then up one level to
+    /// the parent's siblings, and so on. That keeps the selection in a
+    /// predictable region instead of jumping into arbitrary nested cells.
     pub fn move_selection(&mut self, dir: Dir) {
         let Some(cur) = self.selection_item().copied() else {
             return;
         };
-        let cx = cur.rect.x as f64 + cur.rect.width as f64 / 2.0;
-        let cy = cur.rect.y as f64 + cur.rect.height as f64 / 2.0;
+        let mut anchor = self.selection;
+        let mut anchor_rect = cur.rect;
+        loop {
+            let parent = self.tree.node(anchor).parent;
+            if parent == crate::tree::NO_PARENT {
+                break;
+            }
+            if let Some(best) = self.nearest_sibling(parent, anchor, anchor_rect, dir) {
+                self.selection = best;
+                return;
+            }
+            anchor = parent;
+            match self.layout.iter().find(|i| i.node == Some(anchor)) {
+                Some(item) => anchor_rect = item.rect,
+                None => break,
+            }
+        }
+    }
+
+    /// Nearest visible sibling of `current` in a direction.
+    fn nearest_sibling(
+        &self,
+        parent: NodeId,
+        current: NodeId,
+        cur_rect: Rect,
+        dir: Dir,
+    ) -> Option<NodeId> {
+        let cx = cur_rect.x as f64 + cur_rect.width as f64 / 2.0;
+        let cy = cur_rect.y as f64 + cur_rect.height as f64 / 2.0;
         let mut best: Option<(f64, NodeId)> = None;
-        for item in &self.layout {
-            let Some(node) = item.node else { continue };
-            if node == self.selection {
+        for &sib in self.tree.children_of(parent) {
+            if sib == current {
                 continue;
             }
+            let Some(item) = self.layout.iter().find(|i| i.node == Some(sib)) else {
+                continue;
+            };
             let ix = item.rect.x as f64 + item.rect.width as f64 / 2.0;
             let iy = item.rect.y as f64 + item.rect.height as f64 / 2.0;
             let dx = ix - cx;
@@ -437,12 +472,10 @@ impl App {
             }
             let score = primary + 2.0 * secondary;
             if best.is_none_or(|(s, _)| score < s) {
-                best = Some((score, node));
+                best = Some((score, sib));
             }
         }
-        if let Some((_, node)) = best {
-            self.selection = node;
-        }
+        best.map(|(_, node)| node)
     }
 
     pub fn zoom_in(&mut self) {
@@ -497,6 +530,14 @@ impl App {
         self.invalidate_layout();
     }
 
+    /// Cycle the palette so the look can be judged live.
+    pub fn cycle_palette(&mut self) {
+        self.palette = self.palette.next();
+        self.plan.palette = self.palette;
+        self.status = Some((format!("palette: {}", self.palette.name()), Instant::now()));
+        self.invalidate_layout();
+    }
+
     pub fn reset_view(&mut self) {
         self.root = self.tree.root();
         self.depth = self.cfg.config.tui.depth.clamp(1, 12);
@@ -525,7 +566,7 @@ impl App {
     // -- marks and trash ----------------------------------------------------
 
     pub fn toggle_mark(&mut self) {
-        if self.selection == self.root() {
+        if self.selection == self.view_root() {
             return;
         }
         if !self.marked.insert(self.selection) {
@@ -644,6 +685,7 @@ impl App {
             Some(Action::Rescan) => self.rescan("rescanning"),
             Some(Action::Mode) => self.cycle_mode(),
             Some(Action::ColorMode) => self.cycle_color_mode(),
+            Some(Action::Palette) => self.cycle_palette(),
             Some(Action::Hidden) => self.toggle_hidden(),
             Some(Action::Apparent) => self.toggle_apparent(),
             Some(Action::Reset) => self.reset_view(),
@@ -684,8 +726,14 @@ impl App {
         }
     }
 
-    pub fn root(&self) -> NodeId {
+    /// The scan root of the whole tree.
+    pub fn tree_root(&self) -> NodeId {
         self.tree.root()
+    }
+
+    /// The root of the current view (zoom target).
+    pub fn view_root(&self) -> NodeId {
+        self.root
     }
 
     pub fn sidebar_visible(&self, width: u16) -> bool {

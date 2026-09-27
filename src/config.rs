@@ -106,6 +106,8 @@ pub struct ColorConfig {
     /// Discrete size tiers, e.g. `["10MB", "100MB", "1GB"]`.
     pub tiers: Vec<String>,
     pub reverse: bool,
+    /// How strongly palette colors are used: 1.0 = full, lower = muted.
+    pub saturation: f64,
     pub theme: ThemeName,
     /// Per-category overrides keyed by category id.
     pub categories: BTreeMap<String, CategoryConfig>,
@@ -121,6 +123,7 @@ impl Default for ColorConfig {
             scale: ScaleName::Log,
             tiers: Vec::new(),
             reverse: false,
+            saturation: 0.7,
             theme: ThemeName::Auto,
             categories: BTreeMap::new(),
         }
