@@ -87,12 +87,14 @@ pub fn squarify(weights: &[u64], area: Rect) -> (Vec<Placed>, usize) {
         return (Vec::new(), weights.len());
     }
 
-    // Keep only entries that can get at least one cell on average.
+    // Keep only entries that can get a few cells: a one-cell sliver is not a
+    // shape, it is noise. The rest are aggregated into an overflow cell.
+    const MIN_FAIR_CELLS: f64 = 3.0;
     let mut kept: Vec<(usize, f64)> = Vec::new();
     let mut kept_total = 0f64;
     for (i, &w) in weights.iter().enumerate() {
         let fair = w as f64 / total * cells;
-        if fair >= 1.0 {
+        if fair >= MIN_FAIR_CELLS {
             kept.push((i, w as f64));
             kept_total += w as f64;
         }

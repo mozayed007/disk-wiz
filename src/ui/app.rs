@@ -481,6 +481,22 @@ impl App {
         self.invalidate_layout();
     }
 
+    /// Cycle the color mapping: category, size, age, depth.
+    pub fn cycle_color_mode(&mut self) {
+        use crate::config::ColorModeName;
+        self.plan.mode = match self.plan.mode {
+            ColorModeName::Category => ColorModeName::Size,
+            ColorModeName::Size => ColorModeName::Age,
+            ColorModeName::Age => ColorModeName::Depth,
+            ColorModeName::Depth => ColorModeName::Category,
+        };
+        self.status = Some((
+            format!("colors: {:?}", self.plan.mode).to_lowercase(),
+            Instant::now(),
+        ));
+        self.invalidate_layout();
+    }
+
     pub fn reset_view(&mut self) {
         self.root = self.tree.root();
         self.depth = self.cfg.config.tui.depth.clamp(1, 12);
@@ -627,6 +643,7 @@ impl App {
             Some(Action::ClearMarks) => self.clear_marks(),
             Some(Action::Rescan) => self.rescan("rescanning"),
             Some(Action::Mode) => self.cycle_mode(),
+            Some(Action::ColorMode) => self.cycle_color_mode(),
             Some(Action::Hidden) => self.toggle_hidden(),
             Some(Action::Apparent) => self.toggle_apparent(),
             Some(Action::Reset) => self.reset_view(),
@@ -694,6 +711,12 @@ impl App {
     }
 }
 
+/// Maximum children drawn per cell; the rest aggregate into one cell.
+///
+/// Bounding the fan-out guarantees every drawn child gets a readable share of
+/// its parent instead of a one-cell sliver (the "N more" pattern).
+const MAX_CHILDREN: usize = 24;
+
 /// Recursively lay out visible cells for a node's children.
 #[allow(clippy::too_many_arguments)]
 fn layout_node(
@@ -711,17 +734,40 @@ fn layout_node(
     }
     let sort = mode.sort_key();
     let kids = tree.sorted_children(id, sort, reverse);
-    let weights: Vec<u64> = kids
+    let keep = if kids.len() > MAX_CHILDREN {
+        MAX_CHILDREN - 1
+    } else {
+        kids.len()
+    };
+    let aggregated = kids.len() - keep;
+    let mut weights: Vec<u64> = kids[..keep]
         .iter()
         .map(|&k| tree.value_for(k, sort).max(1))
         .collect();
+    let overflow_index = if aggregated > 0 {
+        let sum: u64 = kids[keep..]
+            .iter()
+            .map(|&k| tree.value_for(k, sort).max(1))
+            .sum();
+        weights.push(sum.max(1));
+        Some(weights.len() - 1)
+    } else {
+        None
+    };
     let (entries, dropped) = layout::treemap(&weights, rect);
     for entry in entries {
-        if entry.index == OVERFLOW {
+        let is_overflow = entry.index == OVERFLOW
+            || (overflow_index.is_some() && Some(entry.index) == overflow_index);
+        if is_overflow {
+            let count = if entry.index == OVERFLOW {
+                dropped
+            } else {
+                aggregated + dropped
+            };
             out.push(LayoutItem {
                 node: None,
                 rect: entry.rect,
-                overflow: dropped,
+                overflow: count,
                 color: (72, 75, 86),
                 depth,
                 has_children: false,
@@ -767,14 +813,18 @@ pub fn label_rows(rect: Rect) -> u16 {
 }
 
 /// The area of a rect left for children, below its label rows.
+///
+/// Recursion stops early for small cells: a three-by-three mosaic of tiny
+/// rectangles is noise, not information, so a cell needs enough room to show
+/// its children as real shapes before they are laid out.
 fn inner_rect(rect: Rect) -> Option<Rect> {
-    if rect.width < 5 || rect.height < 4 {
+    if rect.width < 9 || rect.height < 6 {
         return None;
     }
     let rows = label_rows(rect);
     let width = rect.width.saturating_sub(2);
     let height = rect.height.saturating_sub(rows + 1);
-    if width < 3 || height < 3 {
+    if width < 7 || height < 3 {
         return None;
     }
     Some(Rect {

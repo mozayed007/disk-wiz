@@ -34,6 +34,7 @@ Keys (all rebindable, see Configuration):
 | `backspace` / `u` | up one level |
 | `[` `]` | decrease / increase depth |
 | `t` | cycle size / files / age |
+| `m` | cycle colors: category / size / age / depth |
 | `H` | toggle hidden entries (rescans) |
 | `a` | toggle apparent size (rescans) |
 | `/` | filter by name (esc clears) |
@@ -91,12 +92,16 @@ Exit codes: `0` ok, `1` error, `2` usage, `3` scan errors with `--strict`,
 
 ## Colors
 
-- `category` (default): file-type categories (code, media, documents, cache,
-  git, toolchains, agent scratch, synced) with muted colors tuned for terminals.
-- `size`: a sequential ramp over size, with `scale = linear | log | rank` (log
-  by default) and optional discrete `tiers`.
+- `size` (default): a sequential ramp over size with `scale = linear | log |
+  rank` (log by default) and optional discrete `tiers`. Lightness varies with
+  size, so hierarchy stays legible.
+- `category`: file-type categories (code, media, documents, cache, git,
+  toolchains, agent scratch, synced) with muted colors; nesting is carried by
+  depth-based lightness steps.
 - `age`: a ramp over the newest mtime in each subtree.
 - `depth`: a categorical cycle by nesting depth.
+
+Press `m` in the TUI to cycle color modes, or set `color.mode` in the config.
 
 Palettes: `viridis` (default), `magma`, `inferno`, `plasma`, `cividis`,
 `turbo`, `spectral`, plus categorical `okabe-ito`, `tableau10`, and `dim`.

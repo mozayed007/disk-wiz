@@ -227,6 +227,54 @@ mod tests {
         assert!(covered.iter().all(|&c| c), "uncovered cells in the treemap");
     }
 
+    /// Sibling cells leave a one-cell gap so the parent color separates them.
+    #[test]
+    fn siblings_are_separated_by_a_gap() {
+        let mut app = test_app();
+        let area = ratatui::layout::Rect::new(0, 1, 100, 30);
+        app.ensure_layout(area);
+        let drawn: Vec<ratatui::layout::Rect> = app
+            .layout
+            .iter()
+            .filter(|i| i.node.is_some())
+            .map(|i| {
+                if i.rect.width >= 4 && i.rect.height >= 3 {
+                    ratatui::layout::Rect {
+                        x: i.rect.x,
+                        y: i.rect.y,
+                        width: i.rect.width - 1,
+                        height: i.rect.height - 1,
+                    }
+                } else {
+                    i.rect
+                }
+            })
+            .collect();
+        // Siblings (same depth) never touch edge-to-edge.
+        for (idx, a) in app.layout.iter().enumerate() {
+            if a.node.is_none() || a.rect.width < 4 || a.rect.height < 3 {
+                continue;
+            }
+            for (jdx, b) in app.layout.iter().enumerate().skip(idx + 1) {
+                if b.node.is_none() || b.depth != a.depth {
+                    continue;
+                }
+                if b.rect.width < 4 || b.rect.height < 3 {
+                    continue;
+                }
+                let da = drawn[idx];
+                let db = drawn[jdx];
+                assert_eq!(
+                    da.intersection(db).area(),
+                    0,
+                    "siblings overlap: {:?} and {:?}",
+                    da,
+                    db
+                );
+            }
+        }
+    }
+
     #[test]
     fn selection_moves_and_zooms() {
         let mut app = test_app();
@@ -440,6 +488,32 @@ mod tests {
         let backend = TestBackend::new(w, h);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|frame| draw::draw(frame, &mut app)).unwrap();
+        // Layout statistics: label density and tiny-cell share are the two
+        // numbers that decide whether a treemap reads as calm or as noise.
+        {
+            let real: Vec<_> = app.layout.iter().filter(|i| i.node.is_some()).collect();
+            let labelled = real.iter().filter(|i| i.rect.width >= 8).count();
+            let detailed = real
+                .iter()
+                .filter(|i| i.rect.width >= 14 && i.rect.height >= 3 && i.rect.area() >= 60)
+                .count();
+            let tiny = real.iter().filter(|i| i.rect.area() < 12).count();
+            let overflow = app.layout.len() - real.len();
+            let mut depths = std::collections::BTreeMap::new();
+            for i in &real {
+                *depths.entry(i.depth).or_insert(0usize) += 1;
+            }
+            println!(
+                "layout: {} cells ({} real, {} aggregate), labelled {}, detailed {}, tiny {}, depths {:?}",
+                app.layout.len(),
+                real.len(),
+                overflow,
+                labelled,
+                detailed,
+                tiny,
+                depths
+            );
+        }
         let buffer = terminal.backend().buffer();
         let mut html = String::from(
             "<!doctype html><html><head><meta charset=\"utf-8\"><title>dw tui preview</title>\

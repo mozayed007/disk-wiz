@@ -484,13 +484,14 @@ fn draw_treemap(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     let total = app.tree.node(app.root()).size.max(1);
+    let category_mode = app.plan.mode == ColorModeName::Category;
     for item in &app.layout {
         let rect = item.rect;
         if rect.width == 0 || rect.height == 0 {
             continue;
         }
         if item.node.is_none() {
-            // Aggregate cell: neutral, quiet.
+            // Aggregate cell: neutral and quiet, no bevel or band.
             let base = if theme.is_light() {
                 (216, 218, 224)
             } else {
@@ -523,36 +524,67 @@ fn draw_treemap(frame: &mut Frame, app: &App, area: Rect) {
         if selected {
             color = emphasize(color, theme.is_light(), 0.30);
         }
-        // Depth shading: deeper cells read slightly brighter than their parent.
-        let depth_lift = 1.0 + 0.05 * (item.depth.saturating_sub(1)).min(4) as f64;
-        let color = shade(color, depth_lift);
-        c.fill(rect, color);
+        // In category mode the fill color is constant per category, so depth
+        // lightening carries the hierarchy. In ramp modes size already varies
+        // the lightness, so the layout gaps do the work instead.
+        if category_mode {
+            let lift = 1.0 + 0.12 * (item.depth.saturating_sub(1)).min(4) as f64;
+            color = shade(color, lift.min(1.55));
+        }
 
-        // Label band above the children.
-        if item.has_children {
-            let rows = label_rows(rect);
-            if rect.height > rows {
-                let band = Rect {
-                    x: rect.x,
-                    y: rect.y,
-                    width: rect.width,
-                    height: rows,
-                };
-                c.fill(band, shade(color, 0.86));
+        // Draw the cell with a one-cell gap on its right and bottom edges so
+        // the parent's color shows through: containment reads without hard
+        // grid lines (shaded frames, Bruls et al.).
+        let area_cells = rect.area();
+        let gap = rect.width >= 4 && rect.height >= 3;
+        let drawn = if gap {
+            Rect {
+                x: rect.x,
+                y: rect.y,
+                width: rect.width - 1,
+                height: rect.height - 1,
             }
+        } else {
+            rect
+        };
+        c.fill(drawn, color);
+
+        // Cushion bevel: light top/left, dark bottom/right (van Wijk).
+        if area_cells >= 40 {
+            bevel(&mut c, drawn, color);
         }
-        // Cell edges: darker right and bottom so siblings read apart.
-        cell_edges(&mut c, rect, color);
+        // Label band above the children; stronger for the top level so
+        // top-level groupings stand out (NN/g).
+        if item.has_children && area_cells >= 60 && drawn.height > label_rows(drawn) {
+            let rows = label_rows(drawn);
+            let band = Rect {
+                x: drawn.x,
+                y: drawn.y,
+                width: drawn.width,
+                height: rows,
+            };
+            let factor = if item.depth == 1 { 0.78 } else { 0.90 };
+            c.fill(band, shade(color, factor));
+        }
         if selected {
-            selection_edges(&mut c, rect, contrast(color));
+            selection_edges(&mut c, drawn, contrast(color));
         }
-        labels(&mut c, app, item, rect, color, selected, total);
+        labels(&mut c, app, item, drawn, color, selected, total, area_cells);
     }
 }
 
-fn cell_edges(c: &mut Canvas, rect: Rect, color: Rgb) {
-    let dark = shade(color, 0.70);
-    if rect.width >= 2 {
+/// A subtle cushion: brighter top/left edge, darker bottom/right edge.
+fn bevel(c: &mut Canvas, rect: Rect, color: Rgb) {
+    let light = shade(color, 1.14);
+    let dark = shade(color, 0.86);
+    if rect.width >= 3 {
+        c.vline(
+            rect.x,
+            rect.y,
+            rect.bottom(),
+            ' ',
+            Style::default().bg(rgb(light)),
+        );
         c.vline(
             rect.right() - 1,
             rect.y,
@@ -561,7 +593,14 @@ fn cell_edges(c: &mut Canvas, rect: Rect, color: Rgb) {
             Style::default().bg(rgb(dark)),
         );
     }
-    if rect.height >= 2 {
+    if rect.height >= 3 {
+        c.hline(
+            rect.y,
+            rect.x,
+            rect.right(),
+            ' ',
+            Style::default().bg(rgb(light)),
+        );
         c.hline(
             rect.bottom() - 1,
             rect.x,
@@ -583,6 +622,7 @@ fn selection_edges(c: &mut Canvas, rect: Rect, color: Rgb) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn labels(
     c: &mut Canvas,
     app: &App,
@@ -591,6 +631,7 @@ fn labels(
     color: Rgb,
     selected: bool,
     total: u64,
+    area_cells: u32,
 ) {
     let node = item.node.expect("real node");
     if rect.width < LABEL_MIN_W || rect.height < 1 {
@@ -612,7 +653,8 @@ fn labels(
     };
     c.text(rect.x + 1, rect.y, &name, name_style, max_w);
 
-    if rect.width >= DETAIL_MIN_W && rect.height >= 3 {
+    // Detail only where the cell is roomy enough that it is not clutter.
+    if rect.width >= DETAIL_MIN_W && rect.height >= 3 && area_cells >= 60 {
         let size = app.tree.node(node).size;
         let pct = size as f64 / total as f64 * 100.0;
         let detail = if rect.width >= 24 {
@@ -908,14 +950,10 @@ fn bar(
         return;
     }
     let filled = (frac.clamp(0.0, 1.0) * p.w as f64).round() as usize;
-    for i in 0..p.w {
-        let (ch, style) = if i < filled {
-            ('█', Style::default().fg(color))
-        } else {
-            ('░', Style::default().fg(theme.border))
-        };
-        c.put_char(p.x + i as u16, *y, ch, style);
+    for i in 0..filled.min(p.w) {
+        c.put_char(p.x + i as u16, *y, '█', Style::default().fg(color));
     }
+    let _ = theme;
     *y += 1;
 }
 
@@ -1004,7 +1042,7 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
         area,
     };
     c.style(area, Style::default().bg(theme.header_bg));
-    let keys = " space mark · enter open · hjkl move · / filter · [ ] depth · t mode · r rescan · ? help · q quit";
+    let keys = " space mark · enter open · hjkl move · / filter · [ ] depth · t size · m colors · r rescan · ? help · q quit";
     let keys_max = (area.width as usize).saturating_sub(right_w + 2);
     c.text(
         area.x,
@@ -1056,6 +1094,7 @@ fn draw_help(frame: &mut Frame, app: &App, area: Rect) {
         ("h j k l / arrows", "move the selection"),
         ("[ ]", "decrease / increase depth"),
         ("t", "cycle size / files / age"),
+        ("m", "cycle colors: category / size / age / depth"),
         ("H", "toggle hidden entries (rescans)"),
         ("a", "toggle apparent size (rescans)"),
         ("/", "filter by name (esc clears)"),

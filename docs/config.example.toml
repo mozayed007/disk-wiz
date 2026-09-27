@@ -27,7 +27,8 @@ mouse = true
 
 [color]
 # category | size | age | depth
-mode = "category"
+# size is the default: a quantitative ramp reads best on a dense treemap.
+mode = "size"
 # viridis | magma | inferno | plasma | cividis | turbo | spectral |
 # okabe-ito | tableau10 | dim
 palette = "viridis"

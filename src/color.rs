@@ -454,7 +454,7 @@ impl CategoryMap {
         let mut categories = vec![Category {
             id: "other".into(),
             label: "Other".into(),
-            rgb: (128, 128, 128),
+            rgb: (108, 114, 132),
         }];
         let mut rules = Vec::new();
         let mut builder = GlobSetBuilder::new();

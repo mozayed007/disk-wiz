@@ -114,12 +114,14 @@ pub struct ColorConfig {
 impl Default for ColorConfig {
     fn default() -> Self {
         Self {
-            mode: ColorModeName::Category,
+            // A quantitative ramp encodes size directly and gives every cell a
+            // distinct lightness; category mode is one flag away.
+            mode: ColorModeName::Size,
             palette: "viridis".to_string(),
             scale: ScaleName::Log,
             tiers: Vec::new(),
             reverse: false,
-            theme: ThemeName::Dark,
+            theme: ThemeName::Auto,
             categories: BTreeMap::new(),
         }
     }
@@ -266,7 +268,7 @@ code = { color = "#123456", globs = ["*.rs"] }
         assert!(cfg.scan.hidden);
         assert!(!cfg.scan.apparent_size);
         assert_eq!(cfg.tui.depth, 4);
-        assert_eq!(cfg.color.mode, ColorModeName::Category);
+        assert_eq!(cfg.color.mode, ColorModeName::Size);
         assert!(cfg.worth_a_look.enabled);
     }
 
