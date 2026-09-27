@@ -134,42 +134,39 @@ pub fn run(cli: Cli) -> Result<ExitCode> {
         ColorArg::Auto => stdout_tty && std::env::var_os("NO_COLOR").is_none(),
     };
 
-    let progress = Arc::new(ScanProgress::default());
-    let cancel = Arc::new(AtomicBool::new(false));
-    let show_progress = matches!(mode, Mode::Cli(_)) && !cli.quiet && io::stderr().is_terminal();
-    let progress_thread = if show_progress {
-        Some(spawn_progress(progress.clone()))
-    } else {
-        None
-    };
-    let outcome = scan_all(&spec, progress.clone(), cancel.clone()).map_err(|e| anyhow!(e))?;
-    if let Some(t) = progress_thread {
-        t.finish();
-    }
-
-    let tree = Tree::from_scan(
-        outcome.root,
-        &categories,
-        outcome.errors,
-        outcome.error_count,
-        outcome.duration,
-    );
-
-    let total = tree.node(tree.root()).size;
-    let error_count = tree.error_count;
-    let error_samples = if cli.verbose {
-        tree.errors.clone()
-    } else {
-        Vec::new()
-    };
-
-    match mode {
+    let (total, error_count, error_samples) = match mode {
         Mode::Cli(format) => {
+            let progress = Arc::new(ScanProgress::default());
+            let cancel = Arc::new(AtomicBool::new(false));
+            let show_progress = !cli.quiet && io::stderr().is_terminal();
+            let progress_thread = if show_progress {
+                Some(spawn_progress(progress.clone()))
+            } else {
+                None
+            };
+            let outcome =
+                scan_all(&spec, progress.clone(), cancel.clone()).map_err(|e| anyhow!(e))?;
+            if let Some(t) = progress_thread {
+                t.finish();
+            }
+            let tree = Tree::from_scan(
+                outcome.root,
+                &categories,
+                outcome.errors,
+                outcome.error_count,
+                outcome.duration,
+            );
             let opts = output_options(&cli, &config, format, color_enabled)?;
             let stdout = io::stdout();
             let mut lock = stdout.lock();
             crate::output::write(&tree, &mut lock, &opts)?;
             lock.flush()?;
+            let samples = if cli.verbose {
+                tree.errors.clone()
+            } else {
+                Vec::new()
+            };
+            (tree.node(tree.root()).size, tree.error_count, samples)
         }
         Mode::Tui => {
             let keymap = ui::keys::KeyMap::with_overrides(&config.keys).map_err(|e| anyhow!(e))?;
@@ -182,9 +179,10 @@ pub fn run(cli: Cli) -> Result<ExitCode> {
                 theme: cli.theme.map(theme_name).unwrap_or_default(),
                 keymap,
             };
-            ui::run(tree, ui_config)?;
+            let (total, error_count) = ui::run_scanning(ui_config)?;
+            (total, error_count, Vec::new())
         }
-    }
+    };
 
     if let Some(threshold) = cli.threshold
         && total > threshold

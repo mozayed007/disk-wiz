@@ -104,6 +104,7 @@ fn passes_filter(tree: &Tree, id: NodeId, opts: &OutputOptions) -> bool {
 }
 
 struct FlatRow {
+    node: NodeId,
     size: u64,
     value: u64,
     path: String,
@@ -126,10 +127,35 @@ fn write_flat(tree: &Tree, out: &mut dyn Write, opts: &OutputOptions) -> io::Res
     if let Some(n) = opts.top {
         rows.truncate(n);
     }
-    for row in &rows {
-        writeln!(out, "{}\t{}", size_str(row.size, opts), row.path)?;
+    let values: Vec<f64> = rows.iter().map(|r| r.value as f64).collect();
+    let scale = color::Scale::new(&values, opts.scale);
+    let plan = color_plan(opts);
+    for (rank, row) in rows.iter().enumerate() {
+        let size = size_str(row.size, opts);
+        let size = if opts.color {
+            let rgb = plan.node_color(tree, row.node, opts.sort, rank, rows.len(), &scale);
+            paint(&size, rgb)
+        } else {
+            size
+        };
+        writeln!(out, "{size}\t{}", row.path)?;
     }
     Ok(())
+}
+
+/// Wrap text in a 24-bit foreground color.
+fn paint(text: &str, rgb: Rgb) -> String {
+    format!("\x1b[38;2;{};{};{}m{text}\x1b[0m", rgb.0, rgb.1, rgb.2)
+}
+
+fn color_plan(opts: &OutputOptions) -> color::ColorPlan {
+    color::ColorPlan {
+        mode: opts.color_mode,
+        palette: opts.palette,
+        scale: opts.scale,
+        reverse: opts.reverse,
+        light: false,
+    }
 }
 
 fn collect_flat(
@@ -144,6 +170,7 @@ fn collect_flat(
     let node = tree.node(id);
     if passes_filter(tree, id, opts) {
         rows.push(FlatRow {
+            node: id,
             size: node.size,
             value: tree.value_for(id, opts.sort),
             path: path.to_string_lossy().into_owned(),
@@ -166,28 +193,36 @@ fn collect_flat(
 }
 
 fn write_tree(tree: &Tree, out: &mut dyn Write, opts: &OutputOptions) -> io::Result<()> {
-    let root = tree.root();
-    writeln!(
+    let mut values = Vec::new();
+    collect_tree_values(tree, tree.root(), 0, opts, &mut values);
+    let scale = color::Scale::new(&values, opts.scale);
+    let count = values.len();
+    let mut writer = TreeWriter {
+        tree,
+        opts,
         out,
-        "{}  {}",
-        size_str(tree.node(root).size, opts),
-        tree.name(root)
-    )?;
+        scale,
+        plan: color_plan(opts),
+        rank: 0,
+        count,
+    };
+    let root = tree.root();
+    let size = writer.size_text(root, 0);
+    writeln!(writer.out, "{size}  {}", tree.name(root))?;
     let mut prefix = String::new();
-    write_tree_children(tree, root, &mut prefix, 0, opts, out)
+    writer.write_children(root, &mut prefix, 0)
 }
 
-fn write_tree_children(
+fn collect_tree_values(
     tree: &Tree,
     id: NodeId,
-    prefix: &mut String,
     depth: usize,
     opts: &OutputOptions,
-    out: &mut dyn Write,
-) -> io::Result<()> {
+    values: &mut Vec<f64>,
+) {
     let limit = opts.depth.unwrap_or(usize::MAX);
     if depth >= limit {
-        return Ok(());
+        return;
     }
     let mut kids: Vec<NodeId> = tree
         .sorted_children(id, opts.sort, opts.reverse)
@@ -197,22 +232,72 @@ fn write_tree_children(
     if let Some(n) = opts.top {
         kids.truncate(n);
     }
-    let count = kids.len();
-    for (i, &child) in kids.iter().enumerate() {
-        let last = i + 1 == count;
-        let branch = if last { "└── " } else { "├── " };
-        writeln!(
-            out,
-            "{prefix}{branch}{:>10}  {}",
-            size_str(tree.node(child).size, opts),
-            tree.name(child)
-        )?;
-        let saved = prefix.len();
-        prefix.push_str(if last { "    " } else { "│   " });
-        write_tree_children(tree, child, prefix, depth + 1, opts, out)?;
-        prefix.truncate(saved);
+    for &child in &kids {
+        values.push(tree.value_for(child, opts.sort) as f64);
+        collect_tree_values(tree, child, depth + 1, opts, values);
     }
-    Ok(())
+}
+
+struct TreeWriter<'a> {
+    tree: &'a Tree,
+    opts: &'a OutputOptions,
+    out: &'a mut dyn Write,
+    scale: color::Scale,
+    plan: color::ColorPlan,
+    rank: usize,
+    count: usize,
+}
+
+impl TreeWriter<'_> {
+    fn size_text(&mut self, id: NodeId, width: usize) -> String {
+        let plain = size_str(self.tree.node(id).size, self.opts);
+        let padded = format!("{plain:>width$}");
+        if !self.opts.color {
+            return padded;
+        }
+        let rgb = self.plan.node_color(
+            self.tree,
+            id,
+            self.opts.sort,
+            self.rank,
+            self.count.max(1),
+            &self.scale,
+        );
+        self.rank += 1;
+        paint(&padded, rgb)
+    }
+
+    fn write_children(&mut self, id: NodeId, prefix: &mut String, depth: usize) -> io::Result<()> {
+        let limit = self.opts.depth.unwrap_or(usize::MAX);
+        if depth >= limit {
+            return Ok(());
+        }
+        let mut kids: Vec<NodeId> = self
+            .tree
+            .sorted_children(id, self.opts.sort, self.opts.reverse)
+            .into_iter()
+            .filter(|&c| passes_filter(self.tree, c, self.opts))
+            .collect();
+        if let Some(n) = self.opts.top {
+            kids.truncate(n);
+        }
+        let count = kids.len();
+        for (i, &child) in kids.iter().enumerate() {
+            let last = i + 1 == count;
+            let branch = if last { "└── " } else { "├── " };
+            let size = self.size_text(child, 10);
+            writeln!(
+                self.out,
+                "{prefix}{branch}{size}  {}",
+                self.tree.name(child)
+            )?;
+            let saved = prefix.len();
+            prefix.push_str(if last { "    " } else { "│   " });
+            self.write_children(child, prefix, depth + 1)?;
+            prefix.truncate(saved);
+        }
+        Ok(())
+    }
 }
 
 fn write_json(tree: &Tree, out: &mut dyn Write, opts: &OutputOptions) -> io::Result<()> {
@@ -576,5 +661,56 @@ mod tests {
         };
         let out = render(&opts);
         assert!(out.contains("\x1b[48;2;"));
+    }
+
+    #[test]
+    fn flat_and_tree_colorize_when_enabled() {
+        for format in [OutputFormat::Flat, OutputFormat::Tree] {
+            let opts = OutputOptions {
+                format,
+                color: true,
+                ..Default::default()
+            };
+            let out = render(&opts);
+            assert!(out.contains("\x1b[38;2;"), "{format:?} should be colored");
+        }
+    }
+
+    #[test]
+    fn every_palette_and_mode_renders() {
+        use crate::color::Palette;
+        use crate::config::ColorModeName;
+        for palette in Palette::SEQUENTIAL
+            .iter()
+            .chain(Palette::CATEGORICAL.iter())
+        {
+            for mode in [
+                ColorModeName::Category,
+                ColorModeName::Size,
+                ColorModeName::Age,
+                ColorModeName::Depth,
+            ] {
+                for scale in [
+                    crate::config::ScaleName::Linear,
+                    crate::config::ScaleName::Log,
+                    crate::config::ScaleName::Rank,
+                ] {
+                    let opts = OutputOptions {
+                        format: OutputFormat::Ansi,
+                        width: 60,
+                        height: 16,
+                        color: true,
+                        palette: *palette,
+                        color_mode: mode,
+                        scale,
+                        reverse: true,
+                        ..Default::default()
+                    };
+                    let out = render(&opts);
+                    assert_eq!(out.lines().count(), 16, "{palette:?} {mode:?} {scale:?}");
+                    assert!(out.contains("\x1b[48;2;"), "{palette:?} {mode:?}");
+                }
+            }
+        }
     }
 }

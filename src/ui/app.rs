@@ -119,6 +119,31 @@ pub struct App {
 
 impl App {
     pub fn new(tree: Tree, cfg: UiConfig) -> App {
+        let mut app = Self::with_tree(tree, cfg);
+        app.refresh_derived();
+        app.select_first();
+        app
+    }
+
+    /// Start with a placeholder tree and scan in the background.
+    pub fn new_pending(cfg: UiConfig) -> App {
+        let name = cfg
+            .spec
+            .paths
+            .first()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| ".".to_string());
+        let placeholder = Tree::from_scan(
+            crate::tree::ScanNode::new(std::ffi::OsString::from(name), crate::tree::NodeKind::Dir),
+            &cfg.categories,
+            Vec::new(),
+            0,
+            Duration::ZERO,
+        );
+        Self::with_tree(placeholder, cfg)
+    }
+
+    fn with_tree(tree: Tree, cfg: UiConfig) -> App {
         let palette = Palette::from_name(&cfg.config.color.palette).unwrap_or(Palette::Viridis);
         let theme = Theme::from_name(cfg.theme);
         let plan = ColorPlan {
@@ -136,7 +161,7 @@ impl App {
         };
         let mouse = cfg.config.tui.mouse;
         let sidebar_mode = cfg.sidebar;
-        let mut app = App {
+        App {
             root: tree.root(),
             selection: tree.root(),
             tree,
@@ -164,10 +189,12 @@ impl App {
             layout_key: None,
             should_quit: false,
             last_click: None,
-        };
-        app.refresh_derived();
-        app.select_first();
-        app
+        }
+    }
+
+    /// Total size of the current tree, and its scan error count.
+    pub fn totals(&self) -> (u64, u64) {
+        (self.tree.node(self.tree.root()).size, self.tree.error_count)
     }
 
     fn select_first(&mut self) {

@@ -194,6 +194,33 @@ fn draw_treemap(frame: &mut Frame, app: &App, area: Rect) {
     let theme = app.theme;
     let buf = frame.buffer_mut();
     buf.set_style(area, Style::default().bg(theme.bg));
+    if app.layout.is_empty() {
+        let text = if let Some((entries, bytes, secs)) = app.scan_progress() {
+            format!(
+                "scanning: {} entries · {} · {secs:.1}s",
+                format_count(entries),
+                format_size(bytes)
+            )
+        } else if app.tree.len() <= 1 {
+            "nothing to show".to_string()
+        } else {
+            String::new()
+        };
+        if !text.is_empty() && area.height >= 3 {
+            let y = area.y + area.height / 2;
+            let x = area.x + area.width.saturating_sub(display_width(&text) as u16) / 2;
+            put_text(
+                buf,
+                area,
+                x,
+                y,
+                &text,
+                area.width as usize,
+                Style::default().fg(theme.warn),
+            );
+        }
+        return;
+    }
     let total = app.tree.node(app.root()).size.max(1);
     for item in &app.layout {
         let Some(node) = item.node else {

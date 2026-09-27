@@ -22,12 +22,25 @@ type Tui = Terminal<CrosstermBackend<Stdout>>;
 
 /// Run the interactive TUI until the user quits.
 pub fn run(tree: Tree, cfg: UiConfig) -> Result<()> {
+    run_app(App::new(tree, cfg)).map(|_| ())
+}
+
+/// Open the TUI immediately and scan in the background.
+///
+/// Returns the total size and scan error count of the last completed scan.
+pub fn run_scanning(cfg: UiConfig) -> Result<(u64, u64)> {
+    let mut app = App::new_pending(cfg);
+    app.start_scan();
+    run_app(app)
+}
+
+fn run_app(mut app: App) -> Result<(u64, u64)> {
     install_panic_hook();
-    let mut app = App::new(tree, cfg);
     let mut terminal = setup()?;
     let result = event_loop(&mut terminal, &mut app);
     let restored = restore(&mut terminal);
-    result.and(restored)
+    result.and(restored)?;
+    Ok(app.totals())
 }
 
 fn install_panic_hook() {
@@ -296,6 +309,62 @@ mod tests {
         let mut app = test_app();
         let _ = render(&mut app, 20, 4);
         let _ = render(&mut app, 40, 8);
+    }
+
+    #[test]
+    fn renders_all_palettes_modes_and_themes() {
+        use crate::color::{ColorPlan, Palette};
+        use crate::config::{ColorModeName, ScaleName, ThemeName};
+        use crate::ui::theme::Theme;
+        for palette in Palette::SEQUENTIAL
+            .iter()
+            .chain(Palette::CATEGORICAL.iter())
+        {
+            for mode in [
+                ColorModeName::Category,
+                ColorModeName::Size,
+                ColorModeName::Age,
+                ColorModeName::Depth,
+            ] {
+                let mut app = test_app();
+                app.plan = ColorPlan {
+                    mode,
+                    palette: *palette,
+                    scale: ScaleName::Log,
+                    reverse: true,
+                    light: false,
+                };
+                app.invalidate_layout();
+                let out = render(&mut app, 100, 30);
+                assert!(out.contains("dw"), "{palette:?} {mode:?}");
+            }
+        }
+        let mut app = test_app();
+        app.theme = Theme::from_name(ThemeName::Light);
+        app.plan.light = true;
+        app.invalidate_layout();
+        let out = render(&mut app, 100, 30);
+        assert!(out.contains("dw"));
+    }
+
+    #[test]
+    fn pending_app_renders_while_scanning() {
+        let cfg = UiConfig {
+            spec: ScanSpec {
+                paths: vec![std::path::PathBuf::from(".")],
+                ..Default::default()
+            },
+            config: Config::default(),
+            categories: CategoryMap::builtin(),
+            size_mode: SizeModeName::Size,
+            sidebar: SidebarMode::Always,
+            theme: ThemeName::Dark,
+            keymap: crate::ui::keys::KeyMap::default_map(),
+        };
+        let mut app = App::new_pending(cfg);
+        assert_eq!(app.tree.len(), 1);
+        let out = render(&mut app, 100, 24);
+        assert!(out.contains("nothing to show") || out.contains("scanning"));
     }
 
     #[test]
