@@ -21,6 +21,8 @@ depth = 4
 size_mode = "size"
 # auto | always | never
 sidebar = "auto"
+# left | right
+sidebar_position = "left"
 mouse = true
 
 [color]
@@ -34,8 +36,8 @@ scale = "log"
 # Optional discrete size tiers for the size mode (instead of a continuous ramp).
 tiers = ["10MB", "100MB", "1GB", "10GB"]
 reverse = false
-# dark | light
-theme = "dark"
+# auto (terminal colors) | dark | light
+theme = "auto"
 
 # Per-category overrides. Existing ids replace the builtin entry (keeping its
 # rule position); new ids append after the builtins. `target` is any | dir | file

@@ -100,7 +100,9 @@ Exit codes: `0` ok, `1` error, `2` usage, `3` scan errors with `--strict`,
 
 Palettes: `viridis` (default), `magma`, `inferno`, `plasma`, `cividis`,
 `turbo`, `spectral`, plus categorical `okabe-ito`, `tableau10`, and `dim`.
-`dark` and `light` theme variants, plus a `reverse` flag.
+Themes: `auto` (default, uses the terminal's own colors), `dark`, and `light`,
+plus a `reverse` flag. The TUI shows a legend row: category swatches in
+`category` mode, and a ramp preview in `size`/`age`/`depth` modes.
 
 ## Configuration
 
@@ -117,6 +119,7 @@ exclude = ["**/.git/objects/**"]
 depth = 4
 size_mode = "size"
 sidebar = "auto"
+sidebar_position = "left"
 mouse = true
 
 [color]

@@ -53,6 +53,8 @@ pub struct TuiConfig {
     pub depth: usize,
     pub size_mode: SizeModeName,
     pub sidebar: SidebarMode,
+    /// Where the details panel sits.
+    pub sidebar_position: SidebarPosition,
     pub mouse: bool,
 }
 
@@ -62,9 +64,18 @@ impl Default for TuiConfig {
             depth: 4,
             size_mode: SizeModeName::Size,
             sidebar: SidebarMode::Auto,
+            sidebar_position: SidebarPosition::Left,
             mouse: true,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SidebarPosition {
+    #[default]
+    Left,
+    Right,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -136,7 +147,9 @@ pub enum ScaleName {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ThemeName {
+    /// Use the terminal's own colors (default).
     #[default]
+    Auto,
     Dark,
     Light,
 }

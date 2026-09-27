@@ -10,7 +10,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use ratatui::layout::Rect;
 
 use crate::color::{CategoryMap, ColorPlan, Palette, Scale};
-use crate::config::{Config, SidebarMode, SizeModeName, ThemeName, WorthConfig};
+use crate::config::{Config, SidebarMode, SidebarPosition, SizeModeName, ThemeName, WorthConfig};
 use crate::layout::{self, OVERFLOW};
 use crate::scan::{ScanOutcome, ScanProgress, ScanSpec, scan_all};
 use crate::tree::{NodeId, SizeMode, Tree};
@@ -46,6 +46,10 @@ pub struct LayoutItem {
     /// Number of entries aggregated into this cell (0 for real nodes).
     pub overflow: usize,
     pub color: (u8, u8, u8),
+    /// Nesting depth of this cell below the view root (top level is 1).
+    pub depth: u16,
+    /// True when children were laid out inside this cell.
+    pub has_children: bool,
 }
 
 #[derive(PartialEq)]
@@ -109,6 +113,7 @@ pub struct App {
     pub palette: Palette,
     pub plan: ColorPlan,
     pub sidebar_mode: SidebarMode,
+    pub sidebar_position: SidebarPosition,
     pub mouse: bool,
     pub layout: Vec<LayoutItem>,
     pub scale: Scale,
@@ -161,6 +166,7 @@ impl App {
         };
         let mouse = cfg.config.tui.mouse;
         let sidebar_mode = cfg.sidebar;
+        let sidebar_position = cfg.config.tui.sidebar_position;
         App {
             root: tree.root(),
             selection: tree.root(),
@@ -183,6 +189,7 @@ impl App {
             palette,
             plan,
             sidebar_mode,
+            sidebar_position,
             mouse,
             layout: Vec::new(),
             scale: Scale::new(&[], plan.scale),
@@ -338,6 +345,7 @@ impl App {
                 self.depth,
                 self.size_mode,
                 self.reverse,
+                1,
                 &mut items,
             );
         }
@@ -695,6 +703,7 @@ fn layout_node(
     depth_left: usize,
     mode: SizeMode,
     reverse: bool,
+    depth: u16,
     out: &mut Vec<LayoutItem>,
 ) {
     if depth_left == 0 {
@@ -714,22 +723,46 @@ fn layout_node(
                 rect: entry.rect,
                 overflow: dropped,
                 color: (72, 75, 86),
+                depth,
+                has_children: false,
             });
             continue;
         }
         let child = kids[entry.index];
+        let inner = if depth_left > 1 && tree.is_dir(child) {
+            inner_rect(entry.rect)
+        } else {
+            None
+        };
         out.push(LayoutItem {
             node: Some(child),
             rect: entry.rect,
             overflow: 0,
             color: (72, 75, 86),
+            depth,
+            has_children: inner.is_some(),
         });
-        if depth_left > 1
-            && tree.is_dir(child)
-            && let Some(inner) = inner_rect(entry.rect)
-        {
-            layout_node(tree, child, inner, depth_left - 1, mode, reverse, out);
+        if let Some(inner) = inner {
+            layout_node(
+                tree,
+                child,
+                inner,
+                depth_left - 1,
+                mode,
+                reverse,
+                depth + 1,
+                out,
+            );
         }
+    }
+}
+
+/// Rows reserved at the top of a cell for its label.
+pub fn label_rows(rect: Rect) -> u16 {
+    if rect.width >= 12 && rect.height >= 3 {
+        2
+    } else {
+        1
     }
 }
 
@@ -738,19 +771,15 @@ fn inner_rect(rect: Rect) -> Option<Rect> {
     if rect.width < 5 || rect.height < 4 {
         return None;
     }
-    let label_rows: u16 = if rect.width >= 12 && rect.height >= 3 {
-        2
-    } else {
-        1
-    };
+    let rows = label_rows(rect);
     let width = rect.width.saturating_sub(2);
-    let height = rect.height.saturating_sub(label_rows + 1);
+    let height = rect.height.saturating_sub(rows + 1);
     if width < 3 || height < 3 {
         return None;
     }
     Some(Rect {
         x: rect.x + 1,
-        y: rect.y + label_rows,
+        y: rect.y + rows,
         width,
         height,
     })

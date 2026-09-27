@@ -384,4 +384,88 @@ mod tests {
             println!("{}", line.trim_end());
         }
     }
+
+    /// Render the TUI frame to an HTML file so the colors can be inspected
+    /// outside a terminal: `DW_PREVIEW_PATH=F:\projects cargo test preview_html -- --ignored`.
+    #[test]
+    #[ignore = "writes target/tui-preview.html"]
+    fn preview_html() {
+        use ratatui::style::{Color, Modifier};
+        fn css(color: Color, default: (u8, u8, u8)) -> String {
+            match color {
+                Color::Rgb(r, g, b) => format!("#{r:02x}{g:02x}{b:02x}"),
+                Color::Reset => format!("#{:02x}{:02x}{:02x}", default.0, default.1, default.2),
+                Color::Black => "#1c1c22".to_string(),
+                Color::DarkGray => "#6c6c78".to_string(),
+                Color::LightBlue => "#61afef".to_string(),
+                Color::LightYellow => "#e5c07b".to_string(),
+                Color::LightGreen => "#98c379".to_string(),
+                other => format!("{other:?}"),
+            }
+        }
+        fn escape(s: &str) -> String {
+            s.replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+        }
+        let path = std::env::var("DW_PREVIEW_PATH").unwrap_or_else(|_| ".".to_string());
+        let spec = ScanSpec {
+            paths: vec![std::path::PathBuf::from(&path)],
+            ..Default::default()
+        };
+        let cfg = UiConfig {
+            spec: spec.clone(),
+            config: Config::default(),
+            categories: CategoryMap::builtin(),
+            size_mode: SizeModeName::Size,
+            sidebar: SidebarMode::Always,
+            theme: ThemeName::Auto,
+            keymap: crate::ui::keys::KeyMap::default_map(),
+        };
+        let outcome = crate::scan::scan_all(
+            &spec,
+            std::sync::Arc::new(crate::scan::ScanProgress::default()),
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .unwrap();
+        let tree = Tree::from_scan(
+            outcome.root,
+            &cfg.categories,
+            outcome.errors,
+            outcome.error_count,
+            outcome.duration,
+        );
+        let mut app = App::new(tree, cfg);
+        let (w, h) = (150u16, 42u16);
+        let backend = TestBackend::new(w, h);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw::draw(frame, &mut app)).unwrap();
+        let buffer = terminal.backend().buffer();
+        let mut html = String::from(
+            "<!doctype html><html><head><meta charset=\"utf-8\"><title>dw tui preview</title>\
+             <style>body{background:#0b0b0f;margin:0;padding:16px}\
+             pre{font:14px/1.15 'Cascadia Mono',Consolas,monospace;white-space:pre}</style>\
+             </head><body><pre>",
+        );
+        for y in 0..h {
+            for x in 0..w {
+                let cell = &buffer[(x, y)];
+                let fg = css(cell.fg, (230, 230, 240));
+                let bg = css(cell.bg, (11, 11, 15));
+                let bold = if cell.modifier.contains(Modifier::BOLD) {
+                    "font-weight:700;"
+                } else {
+                    ""
+                };
+                let sym = cell.symbol();
+                let sym = if sym == " " { "&nbsp;" } else { &escape(sym) };
+                html.push_str(&format!(
+                    "<span style=\"color:{fg};background:{bg};{bold}\">{sym}</span>"
+                ));
+            }
+            html.push('\n');
+        }
+        html.push_str("</pre></body></html>");
+        std::fs::write("target/tui-preview.html", html).unwrap();
+    }
 }

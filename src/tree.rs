@@ -183,6 +183,8 @@ pub struct Tree {
     children: Vec<NodeId>,
     pub category_ids: Vec<String>,
     pub category_colors: Vec<Rgb>,
+    /// Total bytes owned per category (each byte counted once).
+    pub category_totals: Vec<u64>,
     /// True when the root is a synthetic wrapper around multiple scan paths.
     pub synthetic_root: bool,
     pub errors: Vec<ScanError>,
@@ -215,6 +217,7 @@ impl Tree {
         let mut nodes: Vec<Node> = Vec::new();
         let mut names: Vec<u8> = Vec::new();
         let mut children: Vec<NodeId> = Vec::new();
+        let mut category_totals = vec![0u64; cats.categories.len()];
         let mut queue: VecDeque<(ScanNode, u32, Option<u16>, NodeId)> = VecDeque::new();
         queue.push_back((root, NO_PARENT, None, 0));
         let mut next_id: NodeId = 1;
@@ -222,6 +225,9 @@ impl Tree {
         while let Some((sn, parent, inherited, id)) = queue.pop_front() {
             debug_assert_eq!(id as usize, nodes.len());
             let classified = cats.classify(&sn.name.to_string_lossy(), sn.kind, inherited);
+            if let Some(slot) = category_totals.get_mut(classified.category as usize) {
+                *slot += sn.own_size;
+            }
             let name_start = names.len() as u32;
             names.extend_from_slice(sn.name.as_encoded_bytes());
             let name_len = names.len() as u32 - name_start;
@@ -254,6 +260,7 @@ impl Tree {
             children,
             category_ids: cats.categories.iter().map(|c| c.id.clone()).collect(),
             category_colors: cats.categories.iter().map(|c| c.rgb).collect(),
+            category_totals,
             synthetic_root,
             errors,
             error_count,
