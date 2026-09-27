@@ -1,0 +1,53 @@
+[package]
+name = "disk-wiz"
+version = "0.1.0"
+edition = "2024"
+description = "Disk usage treemap TUI and CLI"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/MoZayed/disk-wiz"
+keywords = ["disk", "tui", "treemap", "du", "cli"]
+categories = ["command-line-utilities", "filesystem"]
+
+[[bin]]
+name = "dw"
+path = "src/main.rs"
+
+[lib]
+name = "disk_wiz"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+bytesize = "2.7.0"
+clap = { version = "4.6.7", features = ["derive", "wrap_help"] }
+clap_complete = "4.6.11"
+colorous = "1.0.16"
+crossterm = "0.29.0"
+directories = "6.0.0"
+fs4 = "1.1.0"
+globset = "0.4.20"
+ratatui = "0.30.2"
+rayon = "1.12.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1"
+thiserror = "2.0.21"
+toml = "1.1.6"
+trash = "5.2.9"
+unicode-width = "0.2.2"
+
+[dev-dependencies]
+assert_cmd = "2.2.2"
+criterion = "0.8.2"
+insta = { version = "1.48.0", features = ["filters"] }
+predicates = "3.1.4"
+proptest = "1.11.0"
+tempfile = "3.27.0"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[[bench]]
+name = "scan"
+harness = false

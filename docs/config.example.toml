@@ -1,0 +1,65 @@
+# disk-wiz configuration example.
+# Location: ~/.config/disk-wiz/config.toml (Linux/macOS)
+#           %APPDATA%\disk-wiz\config.toml (Windows)
+# Precedence: defaults < this file < environment < CLI flags.
+
+[scan]
+# Include hidden entries (dot-prefixed, or the Windows hidden attribute).
+hidden = true
+# Count logical bytes instead of allocated blocks.
+apparent_size = false
+follow_symlinks = false
+one_file_system = false
+# Count hardlinked files once per link.
+count_links = false
+# Glob patterns to skip (matched against the entry name and its path).
+exclude = ["**/.git/objects/**"]
+
+[tui]
+depth = 4
+# size | files | age
+size_mode = "size"
+# auto | always | never
+sidebar = "auto"
+mouse = true
+
+[color]
+# category | size | age | depth
+mode = "category"
+# viridis | magma | inferno | plasma | cividis | turbo | spectral |
+# okabe-ito | tableau10 | dim
+palette = "viridis"
+# linear | log | rank
+scale = "log"
+# Optional discrete size tiers for the size mode (instead of a continuous ramp).
+tiers = ["10MB", "100MB", "1GB", "10GB"]
+reverse = false
+# dark | light
+theme = "dark"
+
+# Per-category overrides. Existing ids replace the builtin entry (keeping its
+# rule position); new ids append after the builtins. `target` is any | dir | file
+# and `recursive` (default true) makes descendants inherit the category.
+[color.categories]
+code = { color = "#4C8BF5", globs = ["*.rs", "*.py", "*.ts", "*.go"], target = "file" }
+cache = { color = "#B8A038", globs = ["target", "node_modules", ".cache"] }
+scratch = { color = "#C06A9A", globs = ["*.tmp", "*.bak"], recursive = false, target = "file" }
+
+[worth_a_look]
+enabled = true
+max_items = 7
+rules = [
+  { name = "build output", glob = "**/{target,dist,build,out}", older_than = "7d" },
+  { name = "node_modules", glob = "**/node_modules", older_than = "30d" },
+  { name = "cache", glob = "**/.cache", older_than = "30d" },
+]
+
+# Key bindings. Actions: quit, help, filter, mark, trash, clear_marks, rescan,
+# mode, hidden, apparent, reset, depth_dec, depth_inc, zoom_in, zoom_out,
+# up, down, left, right. Keys: "q", "H", "C-c", "enter", "esc", "space",
+# "tab", "backspace", "up"/"down"/"left"/"right", "F5", ...
+# Listing an action replaces its default bindings.
+[keys]
+quit = ["q", "C-c"]
+zoom_in = ["enter", "o"]
+zoom_out = ["backspace", "u"]
