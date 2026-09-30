@@ -629,7 +629,10 @@ mod tests {
         assert_eq!(t.node(a).size, 100);
         assert_eq!(t.node(b).size, 250);
         let sub = find_child(&t, t.root(), "sub").unwrap();
-        assert_eq!(t.node(sub).size, 500);
+        // Directory metadata is part of the total (like du); only Windows
+        // reports zero for it.
+        let sub_meta = fs::metadata(tmp.path().join("sub")).unwrap().len();
+        assert_eq!(t.node(sub).size, 500 + sub_meta);
         assert!(t.node(t.root()).size >= 850);
         assert_eq!(t.error_count, 0);
     }
