@@ -684,8 +684,10 @@ mod tests {
         write_file(&tmp.path().join("target.bin"), 400);
         std::os::unix::fs::symlink(tmp.path().join("target.bin"), tmp.path().join("link")).unwrap();
 
-        let mut opts = ScanOptions::default();
-        opts.apparent_size = true;
+        let opts = ScanOptions {
+            apparent_size: true,
+            ..Default::default()
+        };
         let t = scan_tree(tmp.path(), &opts);
         assert_eq!(t.node(t.root()).files, 2);
         let link = find_child(&t, t.root(), "link").unwrap();
@@ -700,14 +702,18 @@ mod tests {
         write_file(&tmp.path().join("original.bin"), 300);
         fs::hard_link(tmp.path().join("original.bin"), tmp.path().join("copy.bin")).unwrap();
 
-        let mut opts = ScanOptions::default();
-        opts.apparent_size = true;
+        let opts = ScanOptions {
+            apparent_size: true,
+            ..Default::default()
+        };
         let t = scan_tree(tmp.path(), &opts);
         assert_eq!(t.node(t.root()).files, 1);
 
-        let mut opts = ScanOptions::default();
-        opts.apparent_size = true;
-        opts.count_links = true;
+        let opts = ScanOptions {
+            apparent_size: true,
+            count_links: true,
+            ..Default::default()
+        };
         let t = scan_tree(tmp.path(), &opts);
         assert_eq!(t.node(t.root()).files, 2);
     }
