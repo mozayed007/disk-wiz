@@ -1,4 +1,8 @@
-# disk-wiz (`dw`)
+# disk-wiz
+
+[![CI](https://github.com/mozayed007/disk-wiz/actions/workflows/ci.yml/badge.svg)](https://github.com/mozayed007/disk-wiz/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+[![Platforms](https://img.shields.io/badge/platforms-windows%20%7C%20linux%20%7C%20macos-lightgrey.svg)](#install)
 
 A disk usage tool with two personalities in one binary:
 
@@ -9,13 +13,77 @@ A disk usage tool with two personalities in one binary:
   and `ansi` treemap output, with ls-like flags for sorting, filtering, depth,
   and limits.
 
+![dw scanning a sample project: treemap on the right, selection details and a "worth a look" list on the left](docs/tui.png)
+
+## Why
+
+- **One binary, both modes.** `dw` gives you the treemap in a terminal and
+  du-like output in scripts: `-p` forces text, `--format json` hands the tree
+  to `jq`.
+- **`du`-faithful sizes.** Allocated blocks on Unix, logical bytes on Windows,
+  hardlink dedupe and cycle-safe symlink handling included.
+- **A TUI that keeps you oriented.** Zoom, depth, name filters, size/age/
+  category coloring, and a sidebar that answers how big the selection is, how
+  much of the view it takes, when it last changed, and what kind of thing it
+  is.
+- **"Worth a look".** Large or stale build output, caches, `node_modules`, and
+  fat logs are surfaced instead of making you hunt for them.
+- **Cross-platform and tested.** CI on Windows, Linux, and macOS; treemap
+  invariants are property-tested.
+
 ## Install
 
 ```sh
-cargo install --path .
+cargo install --path .                                      # from a clone
+cargo install --git https://github.com/mozayed007/disk-wiz  # from GitHub
 ```
 
 This builds the `dw` binary.
+
+## Quick start
+
+```sh
+dw                             # treemap TUI for the current directory
+dw -p --format flat --depth 1  # one row per top-level entry (du-like)
+dw -p --format tree --depth 2  # indented tree
+dw --json | jq '.children'     # machine-readable
+dw --threshold 50G /           # exit code 4 over budget (CI-friendly)
+```
+
+`dw -p --format flat --depth 1 --top 10` on a sample project:
+
+```text
+657 MiB	demo-app
+290 MiB	demo-app\target
+258 MiB	demo-app\media
+52 MiB	demo-app\.git
+41 MiB	demo-app\node_modules
+12 MiB	demo-app\logs
+1.8 MiB	demo-app\package-lock.json
+1.7 MiB	demo-app\src
+112 KiB	demo-app\Cargo.lock
+64 KiB	demo-app\docs
+```
+
+`dw --format tree --depth 1`:
+
+```text
+657 MiB  demo-app
+├──    290 MiB  target
+├──    258 MiB  media
+├──     52 MiB  .git
+├──     41 MiB  node_modules
+├──     12 MiB  logs
+├──    1.8 MiB  package-lock.json
+├──    1.7 MiB  src
+├──    112 KiB  Cargo.lock
+├──     64 KiB  docs
+├──     64 KiB  tests
+├──     20 KiB  README.md
+├──    8.0 KiB  benches
+├──    2.0 KiB  Cargo.toml
+└──      512 B  .env
+```
 
 ## TUI
 
@@ -170,7 +238,8 @@ cargo test dump_frame -- --ignored --nocapture   # render the TUI to stdout
 
 Layout invariants (tiling, disjointness, determinism) are property-tested;
 scanner totals are cross-checked against fixture sizes; the CLI is tested
-end-to-end with `assert_cmd`.
+end-to-end with `assert_cmd`. Design notes and the v1 plan live in
+`docs/PLAN.md`.
 
 ## License
 
