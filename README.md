@@ -38,7 +38,8 @@ cargo install --path .                                      # from a clone
 cargo install --git https://github.com/mozayed007/disk-wiz  # from GitHub
 ```
 
-This builds the `dw` binary.
+This builds the `dw` binary. Prebuilt Windows, Linux, and macOS binaries are
+attached to [releases](https://github.com/mozayed007/disk-wiz/releases).
 
 ## Quick start
 
