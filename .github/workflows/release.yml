@@ -73,14 +73,17 @@ jobs:
         run: |
           cd dist
           sha256sum *.zip *.tar.gz > SHA256SUMS.txt
-      - name: Create pre-release
+      - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Hyphenated tags (v0.2.0-rc.1) are pre-releases; plain vX.Y.Z is stable.
+          prerelease=""
+          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
           gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --title "disk-wiz $GITHUB_REF_NAME" \
-            --prerelease \
+            $prerelease \
             --verify-tag \
             --generate-notes \
             dist/*
